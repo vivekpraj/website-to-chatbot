@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+jinja2
+pydantic
+httpx
+beautifulsoup4
+python-dotenv
+sentence-transformers
+faiss-cpu
+google-generativeai
