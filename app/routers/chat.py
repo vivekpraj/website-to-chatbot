@@ -8,7 +8,7 @@ from app import models, schemas
 from app.services.embeddings import embed_text
 from app.services.rag import build_rag_prompt
 from app.services.gemini_client import generate_answer
-from app.services.vector_store import retrieve_chunks  # ✅ use new helper
+from app.services.vector_store import retrieve_chunks
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def chat_with_bot(bot_id: str, payload: schemas.ChatRequest, db: Session = Depen
     3. Fetch relevant chunks from Chroma
     4. Build RAG prompt
     5. Send prompt to Gemini
-    6. Return answer + retrieved chunks
+    6. Return answer + retrieved chunks + page URLs
     """
 
     logger.info(f"Chat request received for bot {bot_id}: {payload.message}")
@@ -38,8 +38,8 @@ def chat_with_bot(bot_id: str, payload: schemas.ChatRequest, db: Session = Depen
     # 2️⃣ Embed user question
     query_vec = embed_text([payload.message])[0]
 
-    # 3️⃣ Retrieve top chunks from Chroma for this bot
-    chunks, metadata = retrieve_chunks(bot_id, query_vec, top_k=3)
+    # 3️⃣ Retrieve top chunks + metadata from Chroma
+    chunks, metadatas = retrieve_chunks(bot_id, query_vec, top_k=3)
 
     if not chunks:
         logger.warning(f"No chunks retrieved from Chroma for bot {bot_id}")
@@ -47,20 +47,23 @@ def chat_with_bot(bot_id: str, payload: schemas.ChatRequest, db: Session = Depen
 
     logger.info(f"Retrieved {len(chunks)} chunks for RAG context.")
 
-    # 4️⃣ Build the RAG prompt
+    # 4️⃣ Build RAG prompt
     prompt = build_rag_prompt(chunks, payload.message)
 
-    # 5️⃣ Generate final response using Gemini
+    # 5️⃣ Generate final answer
     answer = generate_answer(prompt)
 
-    # 6️⃣ Return chatbot reply + context
+    # 6️⃣ Shape source_chunks for response
+    source_chunks = []
+    for text, meta in zip(chunks, metadatas):
+        source_chunks.append(
+            schemas.SourceChunk(
+                text=text,
+                page_url=meta.get("page_url") if meta else None
+            )
+        )
+
     return schemas.ChatResponse(
-    answer=answer,
-    source_chunks=[
-        {
-            "text": chunks[i],
-            "page_url": metadata[i].get("page_url") if metadata[i] else None
-        }
-        for i in range(len(chunks))
-    ]
-)
+        answer=answer,
+        source_chunks=source_chunks,
+    )

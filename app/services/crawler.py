@@ -1,53 +1,87 @@
-import re
-import urllib.parse
-from bs4 import BeautifulSoup
-from .scraper import scrape_page
+import asyncio
+import logging
+from typing import Dict, Set
+from urllib.parse import urljoin, urlparse
 
-def is_internal_link(base_url: str, target_url: str) -> bool:
-    base_domain = urllib.parse.urlparse(base_url).netloc
-    target_domain = urllib.parse.urlparse(target_url).netloc
-    return base_domain == target_domain
+from playwright.async_api import async_playwright
 
-def normalize_url(base_url: str, link: str) -> str:
-    return urllib.parse.urljoin(base_url, link)
+logger = logging.getLogger(__name__)
 
-def extract_links(base_url: str, html: str) -> set:
-    soup = BeautifulSoup(html, "html.parser")
-    links = set()
 
-    for tag in soup.find_all("a", href=True):
-        url = normalize_url(base_url, tag["href"])
-        if is_internal_link(base_url, url):
-            links.add(url)
+def _is_same_domain(base_url: str, target_url: str) -> bool:
+    base_domain = urlparse(base_url).netloc
+    target_domain = urlparse(target_url).netloc
+    return target_domain == "" or target_domain == base_domain
 
-    return links
 
-def crawl_website(start_url: str, max_pages: int = 10):
-    """
-    Crawls website up to max_pages and returns a dict:
-        {url: scraped_text}
-    """
+async def _crawl_website_async(start_url: str, max_pages: int = 10) -> Dict[str, str]:
+    logger.info(f"[Playwright] Starting crawl at {start_url} (max_pages={max_pages})")
 
-    to_visit = {start_url}
-    visited = set()
-    results = {}
+    to_visit: Set[str] = {start_url}
+    visited: Set[str] = set()
+    results: Dict[str, str] = {}
 
-    while to_visit and len(visited) < max_pages:
-        url = to_visit.pop()
-        if url in visited:
-            continue
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
 
-        print(f"🔎 Crawling: {url}")
-        html = scrape_page(url)
-        if not html:
-            visited.add(url)
-            continue
+        await page.set_extra_http_headers({
+            "User-Agent": "website-to-chatbot/1.0 (Playwright crawler)"
+        })
 
-        results[url] = html
-        visited.add(url)
+        base_domain = urlparse(start_url).netloc
 
-        # get new internal links
-        links = extract_links(start_url, html)
-        to_visit.update(links - visited)
+        while to_visit and len(visited) < max_pages:
+            url = to_visit.pop()
+            if url in visited:
+                continue
 
+            logger.info(f"[Playwright] Crawling URL: {url}")
+
+            try:
+                # 👉 Correct way: response comes from goto()
+                response = await page.goto(url, wait_until="networkidle", timeout=30000)
+                status = response.status if response else None
+
+                if not response or status >= 400:
+                    logger.warning(f"[Playwright] Skipping {url}, bad status={status}")
+                    visited.add(url)
+                    continue
+
+                # Extract visible text (DOM-based)
+                text = await page.evaluate("() => document.body.innerText || ''")
+                text = " ".join(text.split())
+
+                if len(text) < 50:
+                    logger.warning(f"[Playwright] Insufficient text at {url}")
+                    visited.add(url)
+                    continue
+
+                # Save
+                results[url] = text
+                visited.add(url)
+
+                # Extract all links from the DOM
+                hrefs = await page.eval_on_selector_all(
+                    "a[href]",
+                    "els => els.map(e => e.href)"   # absolute URLs via DOM
+                )
+
+                for link in hrefs:
+                    if _is_same_domain(start_url, link):
+                        if link not in visited and link not in to_visit:
+                            to_visit.add(link)
+
+            except Exception as e:
+                logger.exception(f"[Playwright] Error while crawling {url}: {e}")
+                visited.add(url)
+                continue
+
+        await browser.close()
+
+    logger.info(f"[Playwright] Finished crawling. Total pages collected: {len(results)}")
     return results
+
+
+def crawl_website(start_url: str, max_pages: int = 10) -> Dict[str, str]:
+    return asyncio.run(_crawl_website_async(start_url, max_pages))

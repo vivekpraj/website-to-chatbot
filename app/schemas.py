@@ -28,6 +28,10 @@ class ChatRequest(BaseModel):
 # -----------------------------
 # CHAT RESPONSE
 # -----------------------------
+class SourceChunk(BaseModel):
+    text: str
+    page_url: str | None = None
+
 class ChatResponse(BaseModel):
     answer: str
-    source_chunks: List[str] = []
+    source_chunks: list[SourceChunk]

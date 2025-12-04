@@ -7,11 +7,10 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from .. import models, schemas
 
-# services
-from app.services.crawler import crawl_website        # ⬅️ NEW
+from app.services.crawler import crawl_website
 from app.services.text_processing import process_text_to_chunks
 from app.services.embeddings import embed_text
-from app.services.vector_store import add_chunks_to_chroma
+from app.services.vector_store import add_chunks_to_chroma, reset_chroma_for_bot
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 @router.post("/create", response_model=schemas.BotCreateResponse)
 def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db)):
     """
-    Multi-page pipeline:
-    1. Save bot in database
-    2. Crawl website for up to N pages
-    3. Chunk each page separately
-    4. Embed all chunks
-    5. Store in ChromaDB with page_url metadata
+    Complete multi-page pipeline:
+    1. Save bot in DB as "processing"
+    2. Crawl website (multi-page)
+    3. Clean + Chunk per page
+    4. Embed chunks
+    5. Store into Chroma with page_url metadata
     6. Mark bot as READY
     """
 
@@ -70,54 +69,56 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=500, detail="Failed to create bot")
 
     # -------------------------------------------------------------
-    # 💥  MULTI-PAGE PIPELINE STARTS
+    # 💥  PIPELINE STARTS  (crawl → chunk → embed → save)
     # -------------------------------------------------------------
     logger.info("Starting multi-page bot processing pipeline...")
 
     try:
-        # 1️⃣ Crawl website → returns dict: {url: html_text}
-        logger.info("Crawling website...")
-        page_data = crawl_website(website_url, max_pages=10)
+        # 1️⃣ CRAWL WEBSITE
+        page_texts = crawl_website(website_url, max_pages=10)
 
-        if not page_data:
-            raise Exception("No pages found during crawling.")
+        if not page_texts:
+            raise Exception("No pages found or all pages were empty.")
 
-        logger.info(f"Crawled {len(page_data)} pages.")
+        logger.info(f"Crawled {len(page_texts)} pages.")
 
-        # Prepare final lists
         all_chunks = []
         all_embeddings = []
-        all_metadata = []
+        all_metadatas = []
 
-        # 2️⃣ For each page: clean → chunk → embed
-        for page_url, raw_text in page_data.items():
+        # 2️⃣ FOR EACH PAGE → CHUNK + EMBED + METADATA
+        for page_url, text in page_texts.items():
             logger.info(f"Processing page: {page_url}")
 
-            chunks = process_text_to_chunks(raw_text)
-
+            chunks = process_text_to_chunks(text)
             if not chunks:
                 logger.warning(f"No chunks created for page: {page_url}")
                 continue
 
             embeddings = embed_text(chunks)
 
-            # Save metadata for each chunk
             for c, e in zip(chunks, embeddings):
+                chunk_index = len(all_chunks)
                 all_chunks.append(c)
                 all_embeddings.append(e)
-                all_metadata.append({"page_url": page_url})
+                all_metadatas.append(
+                    {
+                        "bot_id": bot_id,
+                        "page_url": page_url,
+                        "chunk_index": chunk_index,
+                    }
+                )
 
-        if len(all_chunks) == 0:
-            raise Exception("No chunks generated from entire website!")
+        if not all_chunks:
+            raise Exception("No chunks generated from the entire website.")
 
-        # 3️⃣ Save in ChromaDB
-        logger.info(f"Saving {len(all_chunks)} chunks to ChromaDB...")
-        add_chunks_to_chroma(bot_id, all_chunks, all_embeddings, all_metadata)
+        # 3️⃣ STORE IN CHROMA
+        logger.info(f"Saving {len(all_chunks)} chunks into Chroma for bot {bot_id}")
+        add_chunks_to_chroma(bot_id, all_chunks, all_embeddings, all_metadatas)
 
-        # 4️⃣ Finally mark bot ready
+        # 4️⃣ MARK BOT READY
         new_bot.status = "ready"
         db.commit()
-
         logger.info(f"Bot {bot_id} fully generated and READY!")
 
     except Exception as e:
@@ -130,8 +131,103 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
     # 💥  PIPELINE COMPLETED
     # -------------------------------------------------------------
 
+    chat_url = f"/chat/{new_bot.bot_id}"
+
     return schemas.BotCreateResponse(
         bot_id=new_bot.bot_id,
-        chat_url=f"/chat/{new_bot.bot_id}",
+        chat_url=chat_url,
         status=new_bot.status,
+    )
+
+@router.post("/{bot_id}/refresh", response_model=schemas.BotCreateResponse)
+def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
+    """
+    Rebuild an existing bot:
+    1. Set status to 'processing'
+    2. Delete old vector store
+    3. Re-crawl website
+    4. Clean + chunk + embed
+    5. Store into Chroma
+    6. Mark as READY again
+    """
+
+    logger.info(f"Refresh requested for bot_id={bot_id}")
+
+    # 1️⃣ Load bot
+    bot = db.query(models.Bot).filter(models.Bot.bot_id == bot_id).first()
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    website_url = bot.website_url
+    logger.info(f"Rebuilding bot for website: {website_url}")
+
+    # Set status to processing
+    bot.status = "processing"
+    db.commit()
+    db.refresh(bot)
+
+    try:
+        # 2️⃣ Clear existing Chroma index
+        reset_chroma_for_bot(bot_id)
+
+        # 3️⃣ Crawl website again
+        page_texts = crawl_website(website_url, max_pages=10)
+        if not page_texts:
+            raise Exception("No pages found or all pages were empty during refresh.")
+
+        logger.info(f"Re-crawled {len(page_texts)} pages for bot {bot_id}")
+
+        all_chunks = []
+        all_embeddings = []
+        all_metadatas = []
+
+        # 4️⃣ Clean + chunk + embed per page
+        for page_url, text in page_texts.items():
+            logger.info(f"[REFRESH] Processing page: {page_url}")
+
+            chunks = process_text_to_chunks(text)
+            if not chunks:
+                logger.warning(f"[REFRESH] No chunks created for page: {page_url}")
+                continue
+
+            embeddings = embed_text(chunks)
+
+            for c, e in zip(chunks, embeddings):
+                chunk_index = len(all_chunks)
+                all_chunks.append(c)
+                all_embeddings.append(e)
+                all_metadatas.append(
+                    {
+                        "bot_id": bot_id,
+                        "page_url": page_url,
+                        "chunk_index": chunk_index,
+                    }
+                )
+
+        if not all_chunks:
+            raise Exception("No chunks created during refresh for this website.")
+
+        # 5️⃣ Save to Chroma
+        add_chunks_to_chroma(bot_id, all_chunks, all_embeddings, all_metadatas)
+
+        # 6️⃣ Mark bot as ready
+        bot.status = "ready"
+        db.commit()
+        db.refresh(bot)
+
+        logger.info(f"Bot {bot_id} successfully refreshed and READY.")
+
+    except Exception as e:
+        logger.exception("Refresh pipeline failed. Marking bot as FAILED.")
+        bot.status = "failed"
+        db.commit()
+        db.refresh(bot)
+        raise HTTPException(status_code=500, detail=f"Bot refresh failed: {str(e)}")
+
+    # Reuse BotCreateResponse to return status + chat_url
+    chat_url = f"/chat/{bot.bot_id}"
+    return schemas.BotCreateResponse(
+        bot_id=bot.bot_id,
+        chat_url=chat_url,
+        status=bot.status,
     )
