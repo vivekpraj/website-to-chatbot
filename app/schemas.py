@@ -1,0 +1,34 @@
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
+
+
+# -----------------------------
+# BOT CREATION REQUEST
+# -----------------------------
+class BotCreateRequest(BaseModel):
+    website_url: HttpUrl
+
+
+# -----------------------------
+# BOT CREATION RESPONSE
+# -----------------------------
+class BotCreateResponse(BaseModel):
+    bot_id: str
+    chat_url: str
+    status: str
+
+
+# -----------------------------
+# CHAT REQUEST
+# -----------------------------
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+# -----------------------------
+# CHAT RESPONSE
+# -----------------------------
+class ChatResponse(BaseModel):
+    answer: str
+    source_chunks: List[str] = []

@@ -12,9 +12,10 @@ database.db
 .env
 .env.*
 
-# FAISS folders (optional)
-app/data/bots/*
+# CHROMA folders (optional)
+app/data/chroma/bots/
 
 # IDE files
 .vscode/
 .idea/
+
