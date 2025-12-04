@@ -1,12 +1,12 @@
 def build_rag_prompt(context_chunks: list, user_query: str) -> str:
     """
-    Build the final RAG prompt to send to Gemini.
+    Build final RAG prompt sent to Gemini.
     """
 
     context = "\n\n".join(context_chunks)
 
-    prompt = f"""
-You are a helpful AI assistant. Use ONLY the context below to answer.
+    return f"""
+You are a helpful assistant created to answer questions using ONLY the context provided.
 
 --- CONTEXT ---
 {context}
@@ -14,7 +14,6 @@ You are a helpful AI assistant. Use ONLY the context below to answer.
 
 User question: {user_query}
 
-Provide a clear, accurate answer.
+Now provide a clear, short, accurate answer based strictly on the context.
 """
 
-    return prompt

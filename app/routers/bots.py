@@ -1,6 +1,5 @@
 import logging
 import uuid
-import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -9,7 +8,7 @@ from ..db import get_db
 from .. import models, schemas
 
 # services
-from app.services.scraper import scrape_page
+from app.services.crawler import crawl_website        # ⬅️ NEW
 from app.services.text_processing import process_text_to_chunks
 from app.services.embeddings import embed_text
 from app.services.vector_store import add_chunks_to_chroma
@@ -21,12 +20,12 @@ logger = logging.getLogger(__name__)
 @router.post("/create", response_model=schemas.BotCreateResponse)
 def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db)):
     """
-    Complete pipeline:
-    1. Save bot in DB as "processing"
-    2. Scrape website
-    3. Clean + Chunk the text
-    4. Embed chunks
-    5. Store into Chroma
+    Multi-page pipeline:
+    1. Save bot in database
+    2. Crawl website for up to N pages
+    3. Chunk each page separately
+    4. Embed all chunks
+    5. Store in ChromaDB with page_url metadata
     6. Mark bot as READY
     """
 
@@ -71,35 +70,58 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=500, detail="Failed to create bot")
 
     # -------------------------------------------------------------
-    # 💥  PIPELINE STARTS  (scrape → chunk → embed → save)
+    # 💥  MULTI-PAGE PIPELINE STARTS
     # -------------------------------------------------------------
-    logger.info("Starting bot processing pipeline...")
+    logger.info("Starting multi-page bot processing pipeline...")
 
     try:
-        # 1️⃣ SCRAPE TEXT (async)
-        scraped_text = scrape_page(website_url)
-        if not scraped_text or len(scraped_text) < 50:
-            raise Exception("Scraper returned insufficient content.")
+        # 1️⃣ Crawl website → returns dict: {url: html_text}
+        logger.info("Crawling website...")
+        page_data = crawl_website(website_url, max_pages=10)
 
-        # 2️⃣ CLEAN + CHUNK
-        chunks = process_text_to_chunks(scraped_text)
-        if len(chunks) == 0:
-            raise Exception("No chunks created from scraped content.")
+        if not page_data:
+            raise Exception("No pages found during crawling.")
 
-        # 3️⃣ EMBED CHUNKS
-        embeddings = embed_text(chunks)
+        logger.info(f"Crawled {len(page_data)} pages.")
 
-        # 4️⃣ STORE IN CHROMA
-        add_chunks_to_chroma(bot_id, chunks, embeddings)
+        # Prepare final lists
+        all_chunks = []
+        all_embeddings = []
+        all_metadata = []
 
-        # 5️⃣ NOW MARK AS READY
+        # 2️⃣ For each page: clean → chunk → embed
+        for page_url, raw_text in page_data.items():
+            logger.info(f"Processing page: {page_url}")
+
+            chunks = process_text_to_chunks(raw_text)
+
+            if not chunks:
+                logger.warning(f"No chunks created for page: {page_url}")
+                continue
+
+            embeddings = embed_text(chunks)
+
+            # Save metadata for each chunk
+            for c, e in zip(chunks, embeddings):
+                all_chunks.append(c)
+                all_embeddings.append(e)
+                all_metadata.append({"page_url": page_url})
+
+        if len(all_chunks) == 0:
+            raise Exception("No chunks generated from entire website!")
+
+        # 3️⃣ Save in ChromaDB
+        logger.info(f"Saving {len(all_chunks)} chunks to ChromaDB...")
+        add_chunks_to_chroma(bot_id, all_chunks, all_embeddings, all_metadata)
+
+        # 4️⃣ Finally mark bot ready
         new_bot.status = "ready"
         db.commit()
 
-        logger.info(f"Bot {bot_id} fully generated and ready!")
+        logger.info(f"Bot {bot_id} fully generated and READY!")
 
     except Exception as e:
-        logger.exception("Pipeline failed. Marking bot as failed.")
+        logger.exception("Pipeline failed. Marking bot as FAILED.")
         new_bot.status = "failed"
         db.commit()
         raise HTTPException(status_code=500, detail=f"Bot processing failed: {str(e)}")
@@ -108,10 +130,8 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
     # 💥  PIPELINE COMPLETED
     # -------------------------------------------------------------
 
-    chat_url = f"/chat/{new_bot.bot_id}"
-
     return schemas.BotCreateResponse(
         bot_id=new_bot.bot_id,
-        chat_url=chat_url,
+        chat_url=f"/chat/{new_bot.bot_id}",
         status=new_bot.status,
     )
