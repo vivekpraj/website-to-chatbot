@@ -1,5 +1,7 @@
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
+from pydantic import BaseModel, EmailStr
+from datetime import datetime
 
 
 # -----------------------------
@@ -35,3 +37,41 @@ class SourceChunk(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     source_chunks: list[SourceChunk]
+
+
+# -----------------------------
+# USER SCHEMAS
+# -----------------------------
+class UserBase(BaseModel):
+    email: EmailStr
+    name: str
+
+
+class UserCreate(UserBase):
+    password: str   # plain password from client
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserOut(UserBase):
+    id: int
+    role: str
+
+    class Config:
+        from_attributes = True  # for SQLAlchemy integration (Pydantic v2)
+
+
+# -----------------------------
+# TOKEN SCHEMAS
+# -----------------------------
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    user_id: Optional[int] = None
+    role: Optional[str] = None

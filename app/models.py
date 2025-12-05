@@ -11,12 +11,16 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=True)
-    name = Column(String, nullable=True)
-    hashed_password = Column(String, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+
+    hashed_password = Column(String, nullable=False)
+
+    # Role: superadmin / client
+    role = Column(String, default="client")
 
     # One user -> Many bots
-    bots = relationship("Bot", back_populates="owner")
+    bots = relationship("Bot", back_populates="owner", cascade="all, delete")
 
 
 # -----------------------------
@@ -24,18 +28,19 @@ class User(Base):
 # -----------------------------
 class Bot(Base):
     __tablename__ = "bots"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True, index=True)
-
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-
-    bot_id = Column(String, unique=True, index=True)     # UUID for chat URL
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    bot_id = Column(String, unique=True, index=True)
     website_url = Column(String, nullable=False)
 
-    status = Column(String, default="processing")         # processing / ready / failed
-
-    vector_index_path = Column(String, nullable=True)  # path to chroma folder
-
+    status = Column(String, default="processing")
+    vector_index_path = Column(String, nullable=True)
+    
+    message_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

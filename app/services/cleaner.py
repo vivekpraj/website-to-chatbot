@@ -1,6 +1,6 @@
 import re
 
-def clean_text(text: str) -> str:
+def clean_scraped_text(text: str) -> str:
     """
     Clean noisy website text:
     - Remove navbar/footer repeated sections

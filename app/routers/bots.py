@@ -4,20 +4,25 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..db import get_db
-from .. import models, schemas
+from app.db import get_db
+from app import models, schemas
 
 from app.services.crawler import crawl_website
 from app.services.text_processing import process_text_to_chunks
 from app.services.embeddings import embed_text
 from app.services.vector_store import add_chunks_to_chroma, reset_chroma_for_bot
+from app.routers.auth import get_current_user  # 👈 use this for auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post("/create", response_model=schemas.BotCreateResponse)
-def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db)):
+def create_bot(
+    payload: schemas.BotCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),  # 👈 must be logged in
+):
     """
     Complete multi-page pipeline:
     1. Save bot in DB as "processing"
@@ -29,17 +34,23 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
     """
 
     website_url = str(payload.website_url)
-    logger.info(f"Bot creation requested for URL: {website_url}")
+    logger.info(
+        f"User {current_user.id} ({current_user.email}) requested bot for: {website_url}"
+    )
 
-    # --- check for existing bot ---
+    # --- check for existing bot for THIS USER + URL ---
     existing_bot = (
         db.query(models.Bot)
-        .filter(models.Bot.website_url == website_url)
+        .filter(
+            models.Bot.website_url == website_url,
+            models.Bot.user_id == current_user.id,      # 👈 only their own bots
+        )
         .first()
     )
     if existing_bot:
         logger.info(
-            f"Bot already exists for URL {website_url}, reusing bot_id={existing_bot.bot_id}"
+            f"Bot already exists for user {current_user.id} and URL {website_url}, "
+            f"reusing bot_id={existing_bot.bot_id}"
         )
         chat_url = f"/chat/{existing_bot.bot_id}"
         return schemas.BotCreateResponse(
@@ -50,13 +61,14 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
 
     # --- create new bot ---
     bot_id = str(uuid.uuid4())
-    logger.info(f"Creating new bot with bot_id={bot_id}")
+    logger.info(f"Creating new bot with bot_id={bot_id} for user {current_user.id}")
 
     new_bot = models.Bot(
         bot_id=bot_id,
         website_url=website_url,
         status="processing",
         vector_index_path=f"app/data/chroma/bots/{bot_id}",
+        user_id=current_user.id,  # 👈 link to owner
     )
 
     try:
@@ -127,36 +139,46 @@ def create_bot(payload: schemas.BotCreateRequest, db: Session = Depends(get_db))
         db.commit()
         raise HTTPException(status_code=500, detail=f"Bot processing failed: {str(e)}")
 
-    # -------------------------------------------------------------
-    # 💥  PIPELINE COMPLETED
-    # -------------------------------------------------------------
-
     chat_url = f"/chat/{new_bot.bot_id}"
-
     return schemas.BotCreateResponse(
         bot_id=new_bot.bot_id,
         chat_url=chat_url,
         status=new_bot.status,
     )
 
+
 @router.post("/{bot_id}/refresh", response_model=schemas.BotCreateResponse)
-def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
+def refresh_bot(
+    bot_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),  # 👈 must be logged in
+):
     """
-    Rebuild an existing bot:
-    1. Set status to 'processing'
-    2. Delete old vector store
-    3. Re-crawl website
-    4. Clean + chunk + embed
-    5. Store into Chroma
-    6. Mark as READY again
+    Rebuild an existing bot.
+    Only:
+      - the bot owner, or
+      - a super_admin
+    can refresh it.
     """
 
-    logger.info(f"Refresh requested for bot_id={bot_id}")
+    logger.info(
+        f"Refresh requested for bot_id={bot_id} by user {current_user.id} ({current_user.email})"
+    )
 
     # 1️⃣ Load bot
     bot = db.query(models.Bot).filter(models.Bot.bot_id == bot_id).first()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
+
+    # 2️⃣ Permission check → this is where 403 happens
+    if bot.user_id != current_user.id and current_user.role != "super_admin":
+        logger.warning(
+            f"User {current_user.id} tried to refresh bot {bot_id} owned by user {bot.user_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You are not allowed to refresh this bot.",
+        )
 
     website_url = bot.website_url
     logger.info(f"Rebuilding bot for website: {website_url}")
@@ -167,10 +189,10 @@ def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
     db.refresh(bot)
 
     try:
-        # 2️⃣ Clear existing Chroma index
+        # 3️⃣ Clear existing Chroma index
         reset_chroma_for_bot(bot_id)
 
-        # 3️⃣ Crawl website again
+        # 4️⃣ Crawl website again
         page_texts = crawl_website(website_url, max_pages=10)
         if not page_texts:
             raise Exception("No pages found or all pages were empty during refresh.")
@@ -181,7 +203,6 @@ def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
         all_embeddings = []
         all_metadatas = []
 
-        # 4️⃣ Clean + chunk + embed per page
         for page_url, text in page_texts.items():
             logger.info(f"[REFRESH] Processing page: {page_url}")
 
@@ -207,10 +228,8 @@ def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
         if not all_chunks:
             raise Exception("No chunks created during refresh for this website.")
 
-        # 5️⃣ Save to Chroma
         add_chunks_to_chroma(bot_id, all_chunks, all_embeddings, all_metadatas)
 
-        # 6️⃣ Mark bot as ready
         bot.status = "ready"
         db.commit()
         db.refresh(bot)
@@ -224,10 +243,28 @@ def refresh_bot(bot_id: str, db: Session = Depends(get_db)):
         db.refresh(bot)
         raise HTTPException(status_code=500, detail=f"Bot refresh failed: {str(e)}")
 
-    # Reuse BotCreateResponse to return status + chat_url
     chat_url = f"/chat/{bot.bot_id}"
     return schemas.BotCreateResponse(
         bot_id=bot.bot_id,
         chat_url=chat_url,
         status=bot.status,
     )
+
+@router.get("/{bot_id}/stats")
+def get_bot_stats(bot_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+
+    bot = db.query(models.Bot).filter(models.Bot.bot_id == bot_id).first()
+    if not bot:
+        raise HTTPException(404, "Bot not found")
+
+    if bot.user_id != current_user.id:
+        raise HTTPException(403, "You do not own this bot")
+
+    return {
+        "bot_id": bot.bot_id,
+        "website_url": bot.website_url,
+        "message_count": bot.message_count,
+        "status": bot.status,
+        "last_used_at": bot.last_used_at,
+        "created_at": bot.created_at
+    }

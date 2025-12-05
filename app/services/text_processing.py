@@ -3,7 +3,7 @@ import logging
 from typing import List
 
 # ✅ use the cleaner we created in app/services/cleaner.py
-from app.services.cleaner import clean_text as clean_raw_text
+from app.services.cleaner import clean_scraped_text as clean_raw_text
 
 logger = logging.getLogger(__name__)
 
