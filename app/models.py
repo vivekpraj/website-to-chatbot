@@ -45,3 +45,42 @@ class Bot(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="bots")
+# -----------------------------
+# CHATSESSION MODEL
+# -----------------------------
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True)  # public UUID
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"))
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_active_at = Column(DateTime, default=datetime.utcnow)
+
+    message_count = Column(Integer, default=0)
+
+    # Relationship (optional)
+    bot = relationship("Bot")
+# -----------------------------
+# CHATLOG MODEL
+# -----------------------------
+
+class ChatLog(Base):
+    __tablename__ = "chat_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    session_id = Column(String, index=True)    # public session UUID
+    bot_id = Column(Integer, ForeignKey("bots.id"))
+
+    user_message = Column(String, nullable=False)
+    bot_response = Column(String, nullable=False)
+
+    retrieved_sources = Column(String, nullable=True)  # JSON string of sources
+
+    response_time_ms = Column(Integer, nullable=True)  # how long LLM took
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    bot = relationship("Bot")

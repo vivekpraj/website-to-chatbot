@@ -250,21 +250,40 @@ def refresh_bot(
         status=bot.status,
     )
 
-@router.get("/{bot_id}/stats")
-def get_bot_stats(bot_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
 
+@router.get("/{bot_id}/metrics", response_model=schemas.BotMetrics)
+def get_bot_metrics(
+    bot_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Return basic metrics for a single bot:
+    - total messages (message_count)
+    - created_at
+    - last_used_at
+
+    Only:
+    - the bot owner, or
+    - a super_admin
+    can view this.
+    """
+
+    # 1️⃣ Find bot by public bot_id
     bot = db.query(models.Bot).filter(models.Bot.bot_id == bot_id).first()
     if not bot:
-        raise HTTPException(404, "Bot not found")
+        raise HTTPException(status_code=404, detail="Bot not found")
 
-    if bot.user_id != current_user.id:
-        raise HTTPException(403, "You do not own this bot")
+    # 2️⃣ Permission check
+    if current_user.role != "super_admin" and bot.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to view this bot")
 
-    return {
-        "bot_id": bot.bot_id,
-        "website_url": bot.website_url,
-        "message_count": bot.message_count,
-        "status": bot.status,
-        "last_used_at": bot.last_used_at,
-        "created_at": bot.created_at
-    }
+    # 3️⃣ Return metrics
+    return schemas.BotMetrics(
+        bot_id=bot.bot_id,
+        website_url=bot.website_url,
+        message_count=bot.message_count or 0,
+        status= bot.status,
+        created_at=bot.created_at,
+        last_used_at=bot.last_used_at,
+    )

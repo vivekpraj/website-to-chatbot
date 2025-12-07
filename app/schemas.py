@@ -75,3 +75,11 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: Optional[int] = None
     role: Optional[str] = None
+
+class BotMetrics(BaseModel):
+    bot_id: str
+    website_url: str
+    message_count: int
+    created_at: datetime
+    status: str
+    last_used_at: datetime | None = None

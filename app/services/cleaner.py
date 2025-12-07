@@ -1,58 +1,77 @@
 import re
 
+
 def clean_scraped_text(text: str) -> str:
     """
-    Clean noisy website text:
-    - Remove navbar/footer repeated sections
-    - Remove multiple spaces and newlines
-    - Remove CSS/JS words
-    - Remove duplicate lines
-    - Remove extremely short useless lines
+    Better text cleaner for RAG:
+    - Removes boilerplate junk
+    - Keeps email, phone, addresses, contact info
+    - Keeps short lines if they look important
+    - Removes duplicates
     """
 
     if not text:
         return ""
 
-    # 1️⃣ Remove multiple spaces
-    text = re.sub(r"\s+", " ", text)
+    # Normalize whitespace
+    text = re.sub(r"\s+", " ", text).strip()
 
-    # 2️⃣ Remove common navbar/footer junk (case-insensitive)
+    # Remove obvious boilerplate junk (case-insensitive)
     blacklist_patterns = [
-        r"home about us work contact us career",
         r"© \d{4}",
-        r"newsletter", 
-        r"follow us",
-        r"privacy policy",
+        r"all rights reserved",
         r"terms and conditions",
-        r"copyright",
-        r"all rights reserved"
+        r"privacy policy",
+        r"follow us",
+        r"newsletter subscribe",
+        r"cookie policy",
     ]
 
     for pattern in blacklist_patterns:
         text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
 
-    # 3️⃣ Remove URLs inside the text
-    text = re.sub(r"http\S+", " ", text)
-
-    # 4️⃣ Remove email + phone numbers
-    text = re.sub(r"\S+@\S+", " ", text)
-    text = re.sub(r"\+?\d[\d\s]{7,}", " ", text)
-
-    # 5️⃣ Break into lines and remove very short or duplicate lines
-    lines = text.split(".")
-    cleaned_lines = []
+    # Split text into manageable lines
+    raw_lines = re.split(r"[.\n]", text)
+    cleaned = []
     seen = set()
 
-    for line in lines:
+    # Patterns to detect contact info
+    email_pattern = re.compile(r"\S+@\S+")
+    phone_pattern = re.compile(r"\+?\d[\d\s\-]{7,}")
+    url_pattern = re.compile(r"(http|www)\S+")
+
+    important_keywords = [
+        "contact", "email", "phone", "support", "call",
+        "help", "address", "reach us", "get in touch", "chat",
+        "whatsapp", "message us"
+    ]
+
+    for line in raw_lines:
         line = line.strip()
-        if len(line) < 25:        # ignore tiny junk
-            continue
-        if line.lower() in seen:  # avoid duplicates
+
+        if not line:
             continue
 
-        cleaned_lines.append(line)
-        seen.add(line.lower())
+        lower_line = line.lower()
 
-    # 6️⃣ Join back
-    cleaned_text = ". ".join(cleaned_lines)
-    return cleaned_text.strip()
+        # Detect important lines even if short
+        is_important = (
+            email_pattern.search(line) or
+            phone_pattern.search(line) or
+            any(keyword in lower_line for keyword in important_keywords)
+        )
+
+        # Keep short lines ONLY if they are important
+        if len(line) < 25 and not is_important:
+            continue
+
+        # Remove duplicate lines
+        if lower_line in seen:
+            continue
+
+        seen.add(lower_line)
+        cleaned.append(line)
+
+    # Join everything back
+    final = ". ".join(cleaned).strip()
+    return final
