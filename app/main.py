@@ -8,6 +8,7 @@ from .db import Base, engine
 from app import models
 from .routers import bots, chat
 from .routers import bots, chat, auth 
+from app.routers import bots, chat, auth, admin 
 
 
 # -----------------------------
@@ -48,4 +49,5 @@ templates = Jinja2Templates(directory="app/templates")
 app.include_router(bots.router, prefix="/bots", tags=["Bots"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(admin.router, tags=["admin"])
 

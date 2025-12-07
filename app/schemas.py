@@ -83,3 +83,45 @@ class BotMetrics(BaseModel):
     created_at: datetime
     status: str
     last_used_at: datetime | None = None
+
+# ---------- ADMIN: USER SUMMARY ----------
+class AdminUserSummary(BaseModel):
+    id: int
+    email: EmailStr
+    name: str
+    role: str
+    bot_count: int
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- ADMIN: BOT SUMMARY ----------
+class AdminBotSummary(BaseModel):
+    bot_id: str
+    owner_id: int
+    owner_email: EmailStr | None = None
+    website_url: str
+    status: str
+    message_count: int
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+# ---------- ADMIN: GLOBAL SAAS STATS ----------
+class SaaSStats(BaseModel):
+    total_users: int
+    total_bots: int
+    total_messages: int
+
+class BotSummary(BaseModel):
+    bot_id: str
+    website_url: str
+    status: str
+    message_count: int | None = 0
+    created_at: datetime
+    last_used_at: datetime | None = None
+    chat_url: str
+
+    class Config:
+        from_attributes = True

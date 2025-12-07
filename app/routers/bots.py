@@ -287,3 +287,32 @@ def get_bot_metrics(
         created_at=bot.created_at,
         last_used_at=bot.last_used_at,
     )
+
+@router.get("/my", response_model=list[schemas.BotSummary])
+def list_my_bots(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Return all bots created by the logged-in user.
+    Useful for client dashboard.
+    """
+    bots = (
+        db.query(models.Bot)
+        .filter(models.Bot.user_id == current_user.id)
+        .order_by(models.Bot.created_at.desc())
+        .all()
+    )
+
+    return [
+        schemas.BotSummary(
+            bot_id=b.bot_id,
+            website_url=b.website_url,
+            status=b.status,
+            message_count=b.message_count,
+            created_at=b.created_at,
+            last_used_at=b.last_used_at,
+            chat_url=f"/chat/{b.bot_id}",
+        )
+        for b in bots
+    ]
