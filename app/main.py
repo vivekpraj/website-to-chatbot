@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 # FASTAPI APP
 # -----------------------------
 app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # frontend
+    allow_credentials=True,
+    allow_methods=["*"],  # includes OPTIONS
+    allow_headers=["*"],
+)
 
 
 # -----------------------------
