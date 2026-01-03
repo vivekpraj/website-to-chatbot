@@ -11,3 +11,4 @@ faiss-cpu
 google-generativeai
 chromadb
 pydantic[email]
+playwright
