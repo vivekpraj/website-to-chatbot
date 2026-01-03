@@ -39,9 +39,13 @@ export default function ChatPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.detail || "Chat failed");
+        if (res.status === 429) {
+            setError("AI is temporarily unavailable. Please wait and try again.");
+        } else {
+            setError(data.detail || "Chat failed");
+        }
         return;
-      }
+        }
 
       const botMessage: Message = {
         role: "assistant",
@@ -91,7 +95,7 @@ export default function ChatPage() {
 
         {loading && (
           <p className="text-sm text-gray-500">
-            Thinking…
+            AI is Thinking…
           </p>
         )}
 

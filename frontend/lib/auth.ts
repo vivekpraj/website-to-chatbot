@@ -19,3 +19,49 @@ export function logout() {
     window.location.href = "/login";
   }
 }
+
+/**
+ * Decode JWT payload safely
+ */
+function decodeToken(token: string): any | null {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get logged-in user's role
+ * returns: "client" | "super_admin" | null
+ */
+export function getUserRole(): string | null {
+  const token = getToken();
+  if (!token) return null;
+
+  const decoded = decodeToken(token);
+  return decoded?.role || null;
+}
+
+/**
+ * Get logged-in user id (optional, useful later)
+ */
+export function getUserId(): number | null {
+  const token = getToken();
+  if (!token) return null;
+
+  const decoded = decodeToken(token);
+  return decoded?.user_id || null;
+}
+
+
+/**
+ * Check login state
+ */
+export function isAuthenticated(): boolean {
+  return !!getToken();
+}
+
+
+
