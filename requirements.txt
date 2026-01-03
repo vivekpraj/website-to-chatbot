@@ -7,7 +7,7 @@ httpx
 beautifulsoup4
 python-dotenv
 sentence-transformers
-faiss-cpu
+faiss-cpu   
 google-generativeai
 chromadb
 pydantic[email]
