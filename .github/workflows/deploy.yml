@@ -1,0 +1,13 @@
+name: Deployment Info
+
+on:
+  workflow_dispatch:
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Notice
+        run: |
+          echo "Backend is auto-deployed via Railway on push"
+          echo "Frontend is auto-deployed via Vercel on push"

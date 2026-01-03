@@ -13,6 +13,7 @@ from app.services.embeddings import embed_text
 from app.services.rag import build_rag_prompt
 from app.services.gemini_client import generate_answer
 from app.services.vector_store import retrieve_chunks
+from app.services.gemini_client import GeminiQuotaError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -63,7 +64,13 @@ def chat_with_bot(
     prompt = build_rag_prompt(chunks, payload.message)
 
     # 5️⃣ Generate final answer
-    answer = generate_answer(prompt)
+    try:
+        answer = generate_answer(prompt)
+    except GeminiQuotaError:
+        raise HTTPException(
+            status_code=429,
+            detail="AI service is temporarily unavailable. Please try again later.",
+    )
 
     # 6️⃣ Shape source_chunks for response
     source_chunks: list[schemas.SourceChunk] = []

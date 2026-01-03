@@ -2,9 +2,13 @@ import os
 import logging
 from dotenv import load_dotenv
 from google import genai
+from google.genai.errors import ClientError
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+class GeminiQuotaError(Exception):
+    pass
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -24,6 +28,11 @@ def generate_answer(prompt: str) -> str:
             contents=prompt
         )
         return response.text
+    except ClientError as e:
+        # Gemini quota / rate-limit / billing issues
+        logger.error(f"Gemini quota error: {e}")
+        raise GeminiQuotaError("AI service quota exceeded")
+    
     except Exception as e:
         logger.error(f"Gemini error: {e}")
         raise
