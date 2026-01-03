@@ -10,3 +10,4 @@ sentence-transformers
 faiss-cpu
 google-generativeai
 chromadb
+pydantic[email]
