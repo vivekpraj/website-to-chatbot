@@ -12,3 +12,12 @@ google-generativeai
 chromadb
 pydantic[email]
 playwright
+
+python-dotenv
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+
+tenacity
+numpy
+loguru
