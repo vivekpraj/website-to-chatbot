@@ -12,16 +12,22 @@ class GeminiQuotaError(Exception):
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Allow import without key (for CI/testing), but warn
 if not GEMINI_API_KEY:
-    raise Exception("Missing GEMINI_API_KEY environment variable")
-
-# Create new Gemini client
-client = genai.Client(api_key=GEMINI_API_KEY)
+    logger.warning("GEMINI_API_KEY not set - API calls will fail")
+    client = None
+else:
+    # Create new Gemini client only if key exists
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
 def generate_answer(prompt: str) -> str:
     """
     Sends prompt to Gemini 2.0 Flash using new google-genai SDK.
     """
+    # Check if client is initialized
+    if not client:
+        raise Exception("GEMINI_API_KEY not configured. Please set the environment variable.")
+    
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash",
