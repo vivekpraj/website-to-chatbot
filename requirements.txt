@@ -8,12 +8,11 @@ beautifulsoup4
 python-dotenv
 sentence-transformers
 faiss-cpu   
-google-generativeai
 chromadb
 pydantic[email]
 playwright
+google-genai
 
-python-dotenv
 python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
