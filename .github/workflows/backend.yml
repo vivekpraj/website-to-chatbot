@@ -15,36 +15,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          clean: true  # Add this
-          fetch-depth: 0  # Add this
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Clear Python cache
+        run: |
+          find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
+          find . -type f -name '*.pyc' -delete
+
+      - name: Show gemini_client.py content
+        run: |
+          echo "=== Full gemini_client.py content ==="
+          cat app/services/gemini_client.py
+          echo "=== Line count ==="
+          wc -l app/services/gemini_client.py
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check environment variables
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "GEMINI_API_KEY is NOT set"
-          else
-            echo "GEMINI_API_KEY is set"
-          fi
-
-      - name: Debug - Show actual file content
-        run: |
-          echo "=== Line 16 of gemini_client.py ==="
-          sed -n '16p' app/services/gemini_client.py
-
       - name: Test imports
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: "dummy-key-for-ci-testing"
         run: python -c "from app.main import app; print('Backend imports OK')"
