@@ -16,29 +16,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show current directory and files
+        run: |
+          pwd
+          ls -la
+          echo "=== App directory ==="
+          ls -la app/
+          echo "=== Services directory ==="
+          ls -la app/services/
+
+      - name: Show gemini_client.py with line numbers
+        run: |
+          echo "=== gemini_client.py with line numbers ==="
+          cat -n app/services/gemini_client.py
+          echo ""
+          echo "=== Specifically line 14-18 ==="
+          sed -n '14,18p' app/services/gemini_client.py
+
+      - name: Check for .pyc files
+        run: |
+          echo "=== Looking for cached Python files ==="
+          find . -name "*.pyc" -o -name "__pycache__"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Clear Python cache
-        run: |
-          find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
-          find . -type f -name '*.pyc' -delete
-
-      - name: Show gemini_client.py content
-        run: |
-          echo "=== Full gemini_client.py content ==="
-          cat app/services/gemini_client.py
-          echo "=== Line count ==="
-          wc -l app/services/gemini_client.py
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Test imports
+      - name: Test imports with dummy key
         env:
           GEMINI_API_KEY: "dummy-key-for-ci-testing"
-        run: python -c "from app.main import app; print('Backend imports OK')"
+          CI: "true"
+        run: |
+          echo "Environment check:"
+          echo "GEMINI_API_KEY is set: $GEMINI_API_KEY"
+          echo "CI is set: $CI"
+          python -c "from app.main import app; print('Backend imports OK')"
