@@ -29,3 +29,18 @@ jobs:
       - name: Run basic import check
         run: |
           python -c "from app.main import app; print('Backend imports OK')"
+      
+      - name: Check environment variables
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is NOT set"
+          else
+            echo "GEMINI_API_KEY is set"
+          fi
+
+      - name: Test imports
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -c "from app.main import app; print('Backend imports OK')"
