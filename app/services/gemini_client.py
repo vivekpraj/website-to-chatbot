@@ -1,10 +1,13 @@
 import os
 import logging
-from dotenv import load_dotenv
 from google import genai
 from google.genai.errors import ClientError
 
-load_dotenv()
+# Only load .env file in local development, not in CI
+if not os.getenv("CI") and not os.getenv("GITHUB_ACTIONS"):
+    from dotenv import load_dotenv
+    load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 class GeminiQuotaError(Exception):
