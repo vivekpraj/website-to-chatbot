@@ -11,9 +11,9 @@ from app import models, schemas
 
 from app.services.embeddings import embed_text
 from app.services.rag import build_rag_prompt
-from app.services.gemini_client import generate_answer
+from app.services.ai_client import generate_answer
 from app.services.vector_store import retrieve_chunks
-from app.services.gemini_client import GeminiQuotaError
+from app.services.ai_client import GeminiQuotaError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
