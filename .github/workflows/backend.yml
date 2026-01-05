@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: true  # Add this
+          fetch-depth: 0  # Add this
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,6 +38,11 @@ jobs:
           else
             echo "GEMINI_API_KEY is set"
           fi
+
+      - name: Debug - Show actual file content
+        run: |
+          echo "=== Line 16 of gemini_client.py ==="
+          sed -n '16p' app/services/gemini_client.py
 
       - name: Test imports
         env:
