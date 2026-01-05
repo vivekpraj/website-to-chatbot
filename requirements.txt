@@ -12,6 +12,7 @@ google-generativeai
 chromadb
 pydantic[email]
 playwright
+google-genai
 
 python-dotenv
 python-multipart
