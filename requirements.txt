@@ -12,6 +12,7 @@ chromadb
 pydantic[email]
 playwright
 google-genai
+email-validator
 
 python-multipart
 python-jose[cryptography]
