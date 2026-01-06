@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+app = FastAPI()
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
