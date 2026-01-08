@@ -20,6 +20,7 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
+
 # ===============================
 # Node / Frontend artifacts
 # ===============================
@@ -44,3 +45,14 @@ out/
 # ===============================
 .git
 .gitignore
+
+
+venv/
+__pycache__/
+node_modules/
+.cache/
+.huggingface/
+.ms-playwright/
+chromadb/
+data/
+.env
